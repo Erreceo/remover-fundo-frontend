@@ -12,9 +12,33 @@ import {
   providedIn: 'root',
 })
 export class PhotoApiService {
-  private baseUrl = 'http://localhost:8000/api/v1';
-
   constructor(private http: HttpClient) {}
+
+  /** Dynamically resolves the API base URL depending on deployment/proxy environment */
+  public get baseUrl(): string {
+    if (typeof window === 'undefined') {
+      return 'http://localhost:8000/api/v1';
+    }
+    const origin = window.location.origin;
+    const pathname = window.location.pathname;
+
+    // Case 1: Running inside code-server or reverse proxy under /proxy/4200/
+    if (pathname.includes('/proxy/4200')) {
+      return origin + pathname.replace(/\/proxy\/4200.*/, '/proxy/8000/api/v1');
+    }
+    // Case 2: Running under /proxy/8000/
+    if (pathname.includes('/proxy/8000')) {
+      return origin + pathname.replace(/\/proxy\/8000.*/, '/proxy/8000/api/v1');
+    }
+
+    // Case 3: Running on Angular dev port 4200 directly
+    if (window.location.port === '4200') {
+      return `${window.location.protocol}//${window.location.hostname}:8000/api/v1`;
+    }
+
+    // Case 4: Running on port 8000 directly (FastAPI serving Angular) or relative
+    return `${origin}/api/v1`;
+  }
 
   /** Check API health */
   checkHealth(): Observable<{ status: string; version: string }> {
@@ -82,15 +106,17 @@ export class PhotoApiService {
     if (downloadUrl.startsWith('http')) {
       return downloadUrl;
     }
-    return `http://localhost:8000${downloadUrl}`;
+    const apiRoot = this.baseUrl.replace(/\/api\/v1\/?$/, '');
+    const cleanPath = downloadUrl.startsWith('/') ? downloadUrl : `/${downloadUrl}`;
+    return `${apiRoot}${cleanPath}`;
   }
 
   private handleError(error: HttpErrorResponse) {
-    let errorMessage = 'Ocorreu um erro inesperado na comunicação com a API.';
+    let errorMessage = 'Ocorreu um erro na comunicação com o backend.';
     if (error.error && error.error.detail) {
       errorMessage = error.error.detail;
     } else if (error.status === 0) {
-      errorMessage = 'Não foi possível conectar ao servidor backend (FastAPI). Verifique se está em execução na porta 8000.';
+      errorMessage = 'Não foi possível conectar ao servidor backend (FastAPI). Verifique se o backend está em execução na porta 8000.';
     } else if (error.status === 412) {
       errorMessage = error.error?.detail || 'Nenhuma imagem de fundo configurada. Configure uma imagem de fundo antes de processar fotos.';
     }
