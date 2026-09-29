@@ -19,24 +19,25 @@ export class PhotoApiService {
     if (typeof window === 'undefined') {
       return 'http://localhost:8000/api/v1';
     }
+    // Support runtime environment variable injected via window.__APP_CONFIG__ or window.API_URL
+    const customApiUrl = (window as any)?.__APP_CONFIG__?.apiUrl || (window as any)?.API_URL;
+    if (customApiUrl) {
+      return customApiUrl.replace(/\/+$/, '');
+    }
+
     const origin = window.location.origin;
     const pathname = window.location.pathname;
 
     // Case 1: Running inside code-server or reverse proxy under /proxy/4200/
     if (pathname.includes('/proxy/4200')) {
-      return origin + pathname.replace(/\/proxy\/4200.*/, '/proxy/8000/api/v1');
+      return origin + pathname.replace(/\/proxy\/4200.*/, '/proxy/4200/api/v1');
     }
     // Case 2: Running under /proxy/8000/
     if (pathname.includes('/proxy/8000')) {
       return origin + pathname.replace(/\/proxy\/8000.*/, '/proxy/8000/api/v1');
     }
 
-    // Case 3: Running on Angular dev port 4200 directly
-    if (window.location.port === '4200') {
-      return `${window.location.protocol}//${window.location.hostname}:8000/api/v1`;
-    }
-
-    // Case 4: Running on port 8000 directly (FastAPI serving Angular) or relative
+    // Default: relative to current origin (handled by dev server proxy on 4200, or directly on 8000)
     return `${origin}/api/v1`;
   }
 
@@ -116,9 +117,11 @@ export class PhotoApiService {
     if (error.error && error.error.detail) {
       errorMessage = error.error.detail;
     } else if (error.status === 0) {
-      errorMessage = 'Não foi possível conectar ao servidor backend (FastAPI). Verifique se o backend está em execução na porta 8000.';
+      errorMessage = 'Não foi possível conectar ao servidor backend (FastAPI) ou a conexão expirou (timeout). Verifique se o backend está em execução na porta 8000 e tente novamente.';
     } else if (error.status === 412) {
       errorMessage = error.error?.detail || 'Nenhuma imagem de fundo configurada. Configure uma imagem de fundo antes de processar fotos.';
+    } else if (error.status === 504) {
+      errorMessage = 'Tempo limite esgotado ao processar a imagem. Tente novamente.';
     }
     return throwError(() => new Error(errorMessage));
   }
